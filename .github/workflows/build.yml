@@ -1,0 +1,63 @@
+name: build-test-validator
+
+on:
+  workflow_dispatch:
+    inputs:
+      agave_ref:
+        description: Agave commit or tag to build
+        required: true
+        default: 76b86ab0d7e7d82c12491b1cc3e1d6a5b316e488
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      RUSTFLAGS: -C target-cpu=ivybridge
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Checkout Agave
+        uses: actions/checkout@v4
+        with:
+          repository: anza-xyz/agave
+          ref: ${{ inputs.agave_ref }}
+          path: agave
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev libudev-dev zlib1g-dev llvm clang libclang-dev cmake protobuf-compiler
+
+      - name: Stop perf/build.rs from requiring AVX2
+        working-directory: agave
+        run: |
+          grep -n 'build_target_feature_avx2' perf/build.rs
+          sed -i '/build_target_feature_avx2/d' perf/build.rs
+          sed -i '/is_x86_feature_detected!("avx2")/,+1d' perf/build.rs
+          cat perf/build.rs
+          if grep -q 'avx2' perf/build.rs; then
+            echo "perf/build.rs still references avx2 after patching" >&2
+            exit 1
+          fi
+
+      - name: Build solana-test-validator
+        working-directory: agave
+        run: cargo build --release -p agave-validator --bin solana-test-validator
+
+      - name: Report binary
+        working-directory: agave
+        run: |
+          ./target/release/solana-test-validator --version
+          ls -l target/release/solana-test-validator
+          sha256sum target/release/solana-test-validator
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-test-validator-ivybridge
+          path: agave/target/release/solana-test-validator
+          if-no-files-found: error
