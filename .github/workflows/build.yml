@@ -14,6 +14,7 @@ jobs:
     timeout-minutes: 240
     env:
       RUSTFLAGS: -C target-cpu=ivybridge
+      RUST_REED_SOLOMON_ERASURE_ARCH: ivybridge
     steps:
       - name: Free disk space
         run: |
